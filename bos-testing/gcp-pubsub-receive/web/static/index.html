@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GCP Pub/Sub Explorer</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Navigation & Stats Bar -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="app-branding">
+          <svg class="app-logo" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+          <span class="app-title">Pub/Sub Explorer</span>
+          <span class="status-indicator" id="statusBeacon" title="Connection Status"></span>
+        </div>
+        <div class="connection-info" id="connectionInfo" title="Click to change connection">
+          <span class="info-label">Subscription:</span>
+          <span class="info-value" id="currentSubDisplay">Not Connected</span>
+          <span class="info-configure-badge" id="infoConfigureBadge">Configure</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="stat-badge" title="Live message arrival rate">
+          <span class="stat-label">Rate</span>
+          <span class="stat-value" id="statRate">0.0 <small>msg/s</small></span>
+        </div>
+        <div class="stat-badge" title="Total messages received">
+          <span class="stat-label">Total</span>
+          <span class="stat-value" id="statTotal">0</span>
+        </div>
+        <div class="stat-badge" title="Data throughput in kilobytes per second">
+          <span class="stat-label">Throughput</span>
+          <span class="stat-value" id="statThroughput">0.0 <small>KB/s</small></span>
+        </div>
+        <div class="stat-badge" title="Unique devices observed">
+          <span class="stat-label">Devices</span>
+          <span class="stat-value" id="statDevices">0</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <button class="btn btn-outline" id="btnConnect" title="Configure GCP Pub/Sub Connection">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>
+          <span id="btnConnectText">Connect</span>
+        </button>
+        <button class="btn btn-icon" id="btnPause" title="Pause / Resume Live Streaming">
+          <svg class="icon" id="iconPause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          <svg class="icon hidden" id="iconPlay" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </button>
+        <button class="btn btn-icon" id="btnClear" title="Clear Buffer & Tree">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+        <button class="btn btn-outline" id="btnSeek" title="Seek subscription (Purge backlog or Replay)">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+          <span>Seek</span>
+        </button>
+        <button class="btn btn-outline" id="btnPublish" title="Publish Test Message">
+          <svg class="icon" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          <span>Publish</span>
+        </button>
+        <button class="btn btn-icon" id="btnExport" title="Export Captured Messages">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        </button>
+        <button class="btn btn-icon" id="btnThemeToggle" title="Toggle Dark/Light Theme">
+          <svg class="icon" id="iconTheme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content: Split Pane (Tree on Left, Inspector on Right) -->
+    <main class="app-main">
+      <!-- Left Sidebar: Topic / Device Tree (MQTT Explorer Style) -->
+      <aside class="tree-panel">
+        <div class="tree-header">
+          <div class="search-box">
+            <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="treeSearchInput" placeholder="Filter devices or topics...">
+            <button class="clear-search-btn hidden" id="clearSearchBtn">&times;</button>
+          </div>
+          <div class="tree-actions">
+            <button class="btn-sm btn-ghost" id="btnExpandAll" title="Expand all nodes">Expand</button>
+            <button class="btn-sm btn-ghost" id="btnCollapseAll" title="Collapse all nodes">Collapse</button>
+            <select id="selectHierarchyMode" title="Tree Grouping Mode">
+              <option value="standard">Reg / GW / Dev</option>
+              <option value="device_first">Device First</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="tree-content" id="treeContainer">
+          <div class="empty-state" id="treeEmptyState">
+            <svg class="empty-icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <p>No messages received yet.</p>
+            <small>Connect to a subscription to start receiving live telemetry.</small>
+            <button class="btn btn-primary" id="btnEmptyConnect" style="margin-top: 14px; padding: 6px 16px;">
+              <svg class="icon" style="margin-right: 6px;" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>
+              Connect to Pub/Sub
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right Panel: Message & Node Inspector -->
+      <section class="inspector-panel">
+        <!-- Breadcrumb & Node Summary -->
+        <div class="inspector-header">
+          <div class="breadcrumb-container" id="inspectorBreadcrumb">
+            <span class="crumb-item active">Select a node from the tree</span>
+          </div>
+          <div class="node-meta" id="nodeMetaContainer">
+            <span class="meta-tag" id="metaMsgCount">0 msgs</span>
+            <span class="meta-tag" id="metaLastSeen">-</span>
+          </div>
+        </div>
+
+        <!-- Inspector Tabs -->
+        <nav class="inspector-tabs">
+          <button class="tab-btn active" data-tab="tabPayload">
+            <svg class="tab-icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Payload
+          </button>
+          <button class="tab-btn" data-tab="tabPoints">
+            <svg class="tab-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+            Points Telemetry
+            <span class="badge-count hidden" id="badgePointsCount">0</span>
+          </button>
+          <button class="tab-btn" data-tab="tabAttributes">
+            <svg class="tab-icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+            Attributes & Meta
+          </button>
+          <button class="tab-btn" data-tab="tabHistory">
+            <svg class="tab-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            History & Chart
+          </button>
+        </nav>
+
+        <!-- Tab Content Containers -->
+        <div class="tab-content-area">
+          <!-- 1. Payload Tab -->
+          <div class="tab-pane active" id="tabPayload">
+            <div class="pane-toolbar">
+              <div class="format-toggles">
+                <button class="format-btn active" data-format="json">JSON Tree</button>
+                <button class="format-btn" data-format="raw">Raw String</button>
+                <button class="format-btn" data-format="hex">Hex</button>
+              </div>
+              <div class="pane-actions">
+                <input type="text" id="payloadFilterInput" placeholder="Filter in payload..." class="input-sm">
+                <button class="btn-sm btn-outline" id="btnCopyPayload">Copy</button>
+              </div>
+            </div>
+            <div class="payload-body" id="payloadViewer">
+              <div class="empty-state">
+                <p>Select a node or message to inspect its payload</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Points Telemetry Tab -->
+          <div class="tab-pane" id="tabPoints">
+            <div class="pane-toolbar">
+              <input type="text" id="pointsFilterInput" placeholder="Filter points..." class="input-sm">
+              <span class="points-stats" id="pointsStatsSummary"></span>
+            </div>
+            <div class="table-container">
+              <table class="data-table" id="pointsTable">
+                <thead>
+                  <tr>
+                    <th>Point Name</th>
+                    <th>Present Value</th>
+                    <th>Units</th>
+                    <th>Status / Reliability</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="pointsTableBody">
+                  <tr>
+                    <td colspan="5" class="table-empty">No points data available in selected message</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 3. Attributes Tab -->
+          <div class="tab-pane" id="tabAttributes">
+            <div class="attributes-grid">
+              <div class="card">
+                <h4 class="card-title">Message Attributes</h4>
+                <table class="data-table" id="attributesTable">
+                  <thead>
+                    <tr><th>Attribute Key</th><th>Value</th></tr>
+                  </thead>
+                  <tbody id="attributesTableBody">
+                    <tr><td colspan="2" class="table-empty">No attributes</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="card">
+                <h4 class="card-title">Pub/Sub Message Metadata</h4>
+                <div class="meta-list" id="metaListDetails">
+                  <div class="meta-item"><span class="label">Message ID:</span><span class="val" id="metaMsgId">-</span></div>
+                  <div class="meta-item"><span class="label">Publish Time:</span><span class="val" id="metaPublishTime">-</span></div>
+                  <div class="meta-item"><span class="label">Payload Size:</span><span class="val" id="metaPayloadSize">-</span></div>
+                  <div class="meta-item"><span class="label">Ordering Key:</span><span class="val" id="metaOrderingKey">-</span></div>
+                  <div class="meta-item"><span class="label">Delivery Attempt:</span><span class="val" id="metaDeliveryAttempt">-</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. History & Chart Tab -->
+          <div class="tab-pane" id="tabHistory">
+            <!-- Sparkline Chart Section -->
+            <div class="chart-section" id="chartSection">
+              <div class="chart-header">
+                <div class="chart-title-group">
+                  <span class="chart-title" id="chartTitle">Point Value History</span>
+                  <span class="chart-subtitle" id="chartSubtitle">Real-time values over time</span>
+                </div>
+                <div class="chart-stats" id="chartStats">
+                  <span class="chart-stat-item">Min: <b id="chartMin">-</b></span>
+                  <span class="chart-stat-item">Max: <b id="chartMax">-</b></span>
+                  <span class="chart-stat-item">Current: <b id="chartCurrent">-</b></span>
+                </div>
+              </div>
+              <div class="canvas-wrapper">
+                <canvas id="historyCanvas" width="800" height="180"></canvas>
+              </div>
+            </div>
+
+            <!-- Historical Message List -->
+            <div class="history-list-header">
+              <span class="history-count" id="historyCount">Recent Messages (0)</span>
+            </div>
+            <div class="history-list" id="historyListContainer">
+              <div class="table-empty">No historical messages for this node</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Modal: Connection Settings -->
+    <div class="modal-overlay hidden" id="modalConnect">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Pub/Sub Connection Settings</h3>
+          <button class="modal-close" data-close="modalConnect">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <div class="label-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label style="margin-bottom: 0;">Quick Presets</label>
+              <small class="form-hint" style="margin: 0;">Click to autofill</small>
+            </div>
+            <div class="preset-chips" id="presetChipsContainer">
+              <button type="button" class="preset-chip active" data-project="bos-platform-staging" data-sub="uk-lon-glab-subscription">
+                bos-platform-staging / uk-lon-glab-subscription
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="inputProjectId">GCP Project ID <span class="req">*</span></label>
+            <input type="text" id="inputProjectId" placeholder="e.g. bos-platform-staging" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="inputSubscriptionId">Pub/Sub Subscription ID <span class="req">*</span></label>
+            <input type="text" id="inputSubscriptionId" placeholder="e.g. uk-lon-glab-subscription" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="selectAckMode">Acknowledge Policy</label>
+            <select id="selectAckMode">
+              <option value="matched" selected>Acknowledge (Standard - consume matching messages)</option>
+              <option value="peek">Peek (Passive monitor - do not acknowledge messages)</option>
+              <option value="all">Acknowledge All (Consume all incoming messages)</option>
+            </select>
+            <small class="form-hint">Standard mode acknowledges messages as they are received. Peek mode passively monitors without acknowledging.</small>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" id="checkSeekOnConnect" checked style="width:auto; margin:0;">
+              <span><strong>Seek to Now (purge backlog)</strong> &mdash; Reset subscription queue to live messages</span>
+            </label>
+          </div>
+          <div class="form-row">
+            <div class="form-group half">
+              <label for="selectTreeMode">Default Tree Grouping</label>
+              <select id="selectTreeMode">
+                <option value="standard">Registry / Gateway / Device / Folder</option>
+                <option value="device_first">Device / Folder</option>
+              </select>
+            </div>
+            <div class="form-group half">
+              <label for="inputBufferLimit">Buffer Memory Limit</label>
+              <input type="number" id="inputBufferLimit" value="5000" min="500" max="50000">
+            </div>
+          </div>
+          <div class="alert alert-error hidden" id="connectErrorAlert"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" data-close="modalConnect">Cancel</button>
+          <button class="btn btn-danger hidden" id="btnDisconnectNow">Disconnect</button>
+          <button class="btn btn-primary" id="btnSubmitConnect">Connect &amp; Listen</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Seek Subscription -->
+    <div class="modal-overlay hidden" id="modalSeek">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Seek Subscription Backlog</h3>
+          <button class="modal-close" data-close="modalSeek">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            Seeking modifies the unacknowledged message queue for this subscription.
+            You can purge accumulated backlog up to current time, or rewind to replay past messages.
+          </p>
+          <div class="radio-options">
+            <label class="radio-label">
+              <input type="radio" name="seekOption" value="now" checked>
+              <div>
+                <strong>Purge backlog (Seek to Now)</strong>
+                <p>Acknowledge all accumulated messages up to current time.</p>
+              </div>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="seekOption" value="15m">
+              <div>
+                <strong>Replay past 15 minutes</strong>
+                <p>Seek 15 minutes into the past.</p>
+              </div>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="seekOption" value="1h">
+              <div>
+                <strong>Replay past 1 hour</strong>
+                <p>Seek 1 hour into the past.</p>
+              </div>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="seekOption" value="24h">
+              <div>
+                <strong>Replay past 24 hours</strong>
+                <p>Seek 24 hours into the past.</p>
+              </div>
+            </label>
+          </div>
+          <div class="alert alert-info" id="seekStatusAlert"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" data-close="modalSeek">Cancel</button>
+          <button class="btn btn-primary" id="btnSubmitSeek">Execute Seek</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Publish Test Message -->
+    <div class="modal-overlay hidden" id="modalPublish">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h3>Publish Pub/Sub Message</h3>
+          <button class="modal-close" data-close="modalPublish">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="inputPublishTopic">Topic ID <span class="req">*</span></label>
+            <input type="text" id="inputPublishTopic" placeholder="e.g. telemetry-topic" required>
+          </div>
+          <div class="form-group">
+            <label>Attributes</label>
+            <div class="attributes-editor" id="publishAttributesEditor">
+              <div class="attr-row">
+                <input type="text" placeholder="deviceId" value="deviceId" class="attr-key">
+                <input type="text" placeholder="e.g. FCU-1" class="attr-val">
+              </div>
+              <div class="attr-row">
+                <input type="text" placeholder="subFolder" value="subFolder" class="attr-key">
+                <input type="text" placeholder="e.g. pointset" class="attr-val">
+              </div>
+            </div>
+            <button class="btn-sm btn-ghost" id="btnAddAttrRow">+ Add Attribute</button>
+          </div>
+          <div class="form-group">
+            <div class="label-row">
+              <label for="inputPublishPayload">JSON Payload</label>
+              <button class="btn-sm btn-ghost" id="btnFormatPublishJson">Format JSON</button>
+            </div>
+            <textarea id="inputPublishPayload" rows="8" placeholder='{"timestamp": "...", "points": {"temperature": {"present_value": 22.5}}}'></textarea>
+          </div>
+          <div class="alert alert-info hidden" id="publishStatusAlert"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" data-close="modalPublish">Cancel</button>
+          <button class="btn btn-primary" id="btnSubmitPublish">Publish Message</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
+

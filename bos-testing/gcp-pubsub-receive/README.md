@@ -1,152 +1,154 @@
-# gcp-pubsub-receive
+# gcp-pubsub-receive & Pub/Sub Explorer
 
-This command line program allows to see the message stream of a specific devices or class of devices with a common abbreviation.
+A suite of tools for monitoring, filtering, and exploring Google Cloud Pub/Sub message streams from IoT devices (including UDMI, BACnet, Modbus, ClearBlade, and Cloud IoT Core devices).
 
-## Installation
+Includes both an enhanced **CLI tool** (`gcp-pubsub-receive.py`) and a local **MQTT Explorer-style Web UI** (`pubsub_explorer.py`).
 
-`python3 -m pip install -r requirements.txt`
+---
 
-## Usage
+## Features
+
+- **Local Web UI (MQTT Explorer Style)**:
+  - **Hierarchical Topic / Device Tree**: Real-time tree view grouping messages by `Registry -> Gateway -> Device -> SubFolder -> Point`.
+  - **Live Telemetry & Activity Pulse**: Tree nodes highlight green dynamically as new messages arrive.
+  - **Instant Search & Filter**: Real-time filtering across devices, gateways, and point topics.
+  - **Multi-Tab Inspector**:
+    - **Payload**: Collapsible, syntax-colored JSON tree, raw text, and hex viewers with copy-to-clipboard.
+    - **Points Telemetry**: Live table of all telemetry points with values, engineering units, active/alarm badges, and sparkline triggers.
+    - **Attributes & Metadata**: Comprehensive view of all Pub/Sub attributes, message IDs, publish timestamps, and sizing.
+    - **History & Live Charts**: Time-series sparkline/line chart (HTML5 Canvas) for numeric points with min/max/current indicators, plus historical message logs.
+  - **Publish Tester**: Publish test Pub/Sub messages with custom attributes and JSON payloads directly from the UI.
+  - **Seek & Replay**: Purge backlog (seek to now) or rewind up to 24 hours into the past to replay messages.
+  - **Safe Monitoring (Ack Modes)**: Choose between `peek` (no ack / leaves messages for other consumers), `matched` (only ack matching messages), and `all`.
+  - **Export Data**: Download captured message streams as JSON or JSONL.
+  - **Zero Extra Dependencies**: Runs out-of-the-box in the virtual environment without needing Node, npm, or extra pip packages!
+
+- **Refactored CLI Tool**:
+  - Fixed inverted string matching bug for gateway IDs.
+  - Fixed missing registry filter logic.
+  - Fixed `KeyError` crashes on messages missing attributes.
+  - Fixed unhandled JSON decode exceptions on non-JSON payloads.
+  - Replaced repetitive 60-line branching logic with a clean `FilterConfig` engine.
+  - Graceful shutdown on `Ctrl+C` without stack traces.
+  - Seamless `--ui` flag to start the web interface directly from the CLI.
+
+---
+
+## Installation & Authentication
+
+```bash
+# Ensure gcloud credentials are set
+gcloud auth login
+gcloud auth application-default login
+
+# Install requirements in your virtual environment
+python3 -m pip install -r requirements.txt
+```
+
+---
+
+## 1. Local Web UI (Pub/Sub Explorer)
+
+### Launch directly and configure in browser:
+```bash
+./pubsub_explorer.py
+```
+When opened at `http://localhost:8080`, the **Connection Settings** dialog pops up automatically pre-filled with your saved settings or presets (`bos-platform-staging / uk-lon-glab-subscription`). Click **Connect & Listen** or press **Enter**.
+
+### Or launch pre-connected via CLI:
+```bash
+./pubsub_explorer.py -p bos-platform-staging -s uk-lon-glab-subscription --seek
+```
+
+### Launch via `gcp-pubsub-receive.py`:
+```bash
+./gcp-pubsub-receive.py -p bos-platform-staging -s uk-lon-glab-subscription --seek --ui
+```
+
+### Options:
+```
+  -p, --project PROJECT       GCP Project ID
+  -s, --sub SUB               GCP Pub/Sub Subscription ID
+  --port PORT                 Local port to serve web UI on (default: 8080)
+  --host HOST                 Host interface to bind to (default: 127.0.0.1)
+  --ack-mode {peek,matched,all}
+                              Ack policy: 'matched' (default), 'peek', 'all'
+  --seek                      Purge backlog and seek to current time on connect
+  --no-browser                Do not automatically open default web browser
+```
+
+Once launched, open `http://localhost:8080` in your web browser.
+
+---
+
+## 2. Command Line Usage (`gcp-pubsub-receive.py`)
 
 ```
-$ gcloud auth login
-$ gcloud auth application-default login
-$ ./gcp-pubsub-receive.py -h
-                                    _               _     
-  __ _  ___ _ __        _ __  _   _| |__  ___ _   _| |__  
- / _` |/ __| '_ \ _____| '_ \| | | | '_ \/ __| | | | '_ \ 
-| (_| | (__| |_) |_____| |_) | |_| | |_) \__ \ |_| | |_) |
- \__, |\___| .__/      | .__/ \__,_|_.__/|___/\__,_|_.__/ 
- |___/     |_|         |_|                                
+usage: gcp-pubsub-receive.py [-h] [-v] [-p PROJECT] [-s SUB] [-d DEVICE]
+                             [-R REGISTRY] [-g GATEWAY] [-f FOLDER] [-y TYPE]
+                             [-n POINTNAME] [-r] [-t TIMEOUT] [--seek]
+                             [--seek-hours SEEK_HOURS]
+                             [--ack-mode {peek,matched,all}] [--ui]
+                             [--port PORT]
 
-                   _           
- _ __ ___  ___ ___(_)_   _____ 
-| '__/ _ \/ __/ _ \ \ \ / / _ \
-| | |  __/ (_|  __/ |\ V /  __/
-|_|  \___|\___\___|_| \_/ \___|
-                               
-
-usage: gcp-pubsub-receive.py [-h] [-v] [-p PROJECT] [-s SUB] [-d DEVICE] [-g GATEWAY] [-f FOLDER] [-y TYPE] [-n POINTNAME] [-r] [-t TIMEOUT]
-
-optional arguments:
+options:
   -h, --help            show this help message and exit
-  -v, --verbose         increase the verbosity level
-  -p PROJECT, --project PROJECT
-                        GCP project id (required)
-  -s SUB, --sub SUB     GCP PubSub subscription (required)
-  -d DEVICE, --device DEVICE
-                        device name or abbreviation (optional, if not specified shows all devices)
-  -g GATEWAY, --gateway GATEWAY
-                        filter for the gatewayId attribute (optional)
-  -f FOLDER, --folder FOLDER
-                        filter for the subFolder attribute (optional, if not specified shows messages in all folders)
-  -y TYPE, --type TYPE  filter for the subType attribute (optional)
-  -n POINTNAME, --pointname POINTNAME
-                        filter for the point name (optional)
-  -r, --regex           filter device or gateway by regex (default is false)
-  -t TIMEOUT, --timeout TIMEOUT
-                        time interval in seconds for which to receive messages (optional, default=3600 seconds)
+  -v, --verbose         increase verbosity level
+  -p, --project PROJECT GCP project id (required)
+  -s, --sub SUB         GCP Pub/Sub subscription (required)
+  -d, --device DEVICE   device name or abbreviation (optional)
+  -R, --registry REGISTRY
+                        filter for deviceRegistryId attribute (optional)
+  -g, --gateway GATEWAY filter for gatewayId attribute (optional)
+  -f, --folder FOLDER   filter for subFolder attribute (optional)
+  -y, --type TYPE       filter for subType attribute (optional)
+  -n, --pointname POINTNAME
+                        filter for point name in pointset (optional)
+  -r, -x, --regex       use regular expressions for filtering
+  -t, --timeout TIMEOUT time interval in seconds to receive messages (default: 3600s)
+  --seek                seek subscription to now (purges accumulated backlog)
+  --seek-hours HOURS    seek backwards in time by specified hours for replay
+  --ack-mode {peek,matched,all}
+                        ack policy: 'peek' (do not ack), 'matched' (default), 'all'
+  --ui                  launch local MQTT Explorer-style web UI
+  --port PORT           port for the web UI (default: 8080)
 ```
 
-### Example: get pointset values for any DDC device for 30 minutes 
+---
 
-```
+## CLI Examples
+
+### Get pointset values for any DDC device for 30 minutes
+```bash
 python3 gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME -d DDC -f pointset -t 1800
 ```
 
-### Example: get pointset values for a specific device DDC-12 for 1 hour
-
-```
-python3 gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME -d DDC-12$ -r -f pointset -t 3600
-```
-
-### Example: get a the point value "temperature_sensor" for a specific device DDC-12 for 1 hour
-
-```
-python3 gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME -d DDC-12$ -r -f pointset -t 3600 -n temperature_sensor
+### Get pointset values for a specific device DDC-12 using regex
+```bash
+python3 gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME -d "DDC-12$" -r -f pointset -t 3600
 ```
 
-### Example: get state values for a specific device DDC-12 for 1 hour
-
-```
-python3 gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME -d DDC-12$ -r -f system -y state -t 3600
-```
-
-## Example output
-
-### Output for a single point from different devices
-
-```
-% ./gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME -t 3600 -f pointset -n zone_air_control_temperature_sensor
-                                    _               _
-  __ _  ___ _ __        _ __  _   _| |__  ___ _   _| |__
- / _` |/ __| '_ \ _____| '_ \| | | | '_ \/ __| | | | '_ \
-| (_| | (__| |_) |_____| |_) | |_| | |_) \__ \ |_| | |_) |
- \__, |\___| .__/      | .__/ \__,_|_.__/|___/\__,_|_.__/
- |___/     |_|         |_|
-
-                   _
- _ __ ___  ___ ___(_)_   _____
-| '__/ _ \/ __/ _ \ \ \ / / _ \
-| | |  __/ (_|  __/ |\ V /  __/
-|_|  \___|\___\___|_| \_/ \___|
-
-
-Listening for messages from all devices on projects/PROJECT_NAME/subscriptions/SUBSCRIPTION_NAME
-
----------------------------  ---------  ----------  ---------  ----  -----------------------------------  -----------
-Timestamp                    Device ID  Gateway ID  Subfolder  Type  Point name                           Point value
-2024-05-19T20:16:29.125880Z  TRHC-20    DDC-108     pointset         zone_air_control_temperature_sensor  25.11
----------------------------  ---------  ----------  ---------  ----  -----------------------------------  -----------
----------------------------  ---------  ----------  ---------  ----  -----------------------------------  -----------
-Timestamp                    Device ID  Gateway ID  Subfolder  Type  Point name                           Point value
-2024-05-19T20:16:31.255162Z  TRH-69     DDC-83      pointset         zone_air_control_temperature_sensor  21.0
----------------------------  ---------  ----------  ---------  ----  -----------------------------------  -----------
----------------------------  ---------  ----------  ---------  ----  -----------------------------------  -----------
-Timestamp                    Device ID  Gateway ID  Subfolder  Type  Point name                           Point value
-2024-05-19T20:16:45.410108Z  TRHC-54    DDC-133     pointset         zone_air_control_temperature_sensor  25.61
----------------------------  ---------  ----------  ---------  ----  -----------------------------------  -----------
+### Get a single point value ("temperature_sensor") from all devices
+```bash
+python3 gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME -f pointset -n temperature_sensor -t 3600
 ```
 
-### Output for all payloads from a single device
-
+### Peek safely without acknowledging messages (non-destructive monitoring)
+```bash
+python3 gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME -d FCU-2 --ack-mode peek
 ```
-% ./gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME -t 3600 -f pointset -d FCU-2$ -r
-                                    _               _
-  __ _  ___ _ __        _ __  _   _| |__  ___ _   _| |__
- / _` |/ __| '_ \ _____| '_ \| | | | '_ \/ __| | | | '_ \
-| (_| | (__| |_) |_____| |_) | |_| | |_) \__ \ |_| | |_) |
- \__, |\___| .__/      | .__/ \__,_|_.__/|___/\__,_|_.__/
- |___/     |_|         |_|
 
-                   _
- _ __ ___  ___ ___(_)_   _____
-| '__/ _ \/ __/ _ \ \ \ / / _ \
-| | |  __/ (_|  __/ |\ V /  __/
-|_|  \___|\___\___|_| \_/ \___|
+### Replay past 2 hours of messages
+```bash
+python3 gcp-pubsub-receive.py -p PROJECT_NAME -s SUBSCRIPTION_NAME --seek-hours 2 -d FCU-2
+```
 
+---
 
-Listening for messages from FCU-2$ on projects/PROJECT_NAME/subscriptions/SUBSCRIPTION_NAME
+## Running Automated Tests
 
----------------------------  ---------  ----------  ---------  ----
-Timestamp                    Device ID  Gateway ID  Subfolder  Type
-2024-05-19T20:22:58.669342Z  FCU-2      DDC-98      pointset
----------------------------  ---------  ----------  ---------  ----
-Message {
-  data: b'{"version": "1.4.1", "timestamp": "2024-05-19T20:2...'
-  ordering_key: ''
-  attributes: {
-    "deviceId": "FCU-2",
-    "deviceNumId": "2611104595835312",
-    "deviceRegistryId": "REGISTRY_NAME",
-    "deviceRegistryLocation": "us-central1",
-    "gatewayId": "DDC-98",
-    "projectId": "PROJECT_NAME",
-    "source": "clearblade-iot-core",
-    "subFolder": "pointset",
-    "subType": ""
-  }
-}
-b'{"version": "1.4.1", "timestamp": "2024-05-19T20:22:58.669342Z", "points": {"cooling_water_valve_percentage_command": {"present_value": 0.0}, "cooling_water_valve_percentage_sensor": {"present_value": 0.0}, "discharge_air_temperature_sensor": {"present_value": 24.27}, "discharge_fan_fault_status": {"present_value": "inactive"}, "discharge_fan_percentage_command": {"present_value": 0.0}, "fabric_protection_status": {"present_value": "inactive"}, "filter_differential_pressure_sensor": {"present_value": 0.24}, "filter_dirty_alarm": {"present_value": "inactive"}, "fire_alarm_status": {"present_value": "active"}, "heating_water_valve_percentage_command": {"present_value": 0.0}, "heating_water_valve_percentage_sensor": {"present_value": 0.0}, "occupancy_status": {"present_value": "inactive"}, "optimum_start_status": {"present_value": "inactive"}, "return_air_cooling_temperature_setpoint": {"present_value": 23.5}, "return_air_heating_temperature_setpoint": {"present_value": 21.5}, "return_air_temperature_alarm": {"present_value": "inactive"}, "return_air_temperature_sensor": {"present_value": 24.04}, "zone_air_temperature_high_alarm": {"present_value": "inactive"}, "zone_air_temperature_low_alarm": {"present_value": "inactive"}}}'
-----------------------------------------------------------------------
+A comprehensive unit test suite is included to verify filtering, parsing, tree building, and web endpoints:
+
+```bash
+python3 -m unittest test_pubsub_receive.py -v
 ```
